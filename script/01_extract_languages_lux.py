@@ -7,7 +7,8 @@ then detects which languages each website offers.
 OPTIMIZATIONS:
 1. Regex-first: Extract hreflang tags via regex
 2. Website-year deduplication: Only need one successful extraction per (website_url, year)
-3. LLM fallback: Only use LLM for website-years where regex found nothing
+3. Homepage preference: For LLM fallback, prefer homepage over other pages
+4. LLM fallback: Only use LLM for website-years where regex found nothing
 
 Input:  Sample parquet + raw HTML gz files
 Output: Parquet with detected languages per website-year
@@ -28,6 +29,7 @@ import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import aiohttp
 import polars as pl
@@ -72,7 +74,7 @@ PIPELINE_STAGES = int(
     os.getenv("PIPELINE_PARALLEL_SIZE", args.pipeline_parallel_size or "1")
 )
 # Increased concurrency for better throughput
-CONCURRENCY = PIPELINE_STAGES * 64
+CONCURRENCY = PIPELINE_STAGES * 128
 TIMEOUT_S = int(os.getenv("TIMEOUT_S", "300"))
 MAX_RETRIES = 3
 
@@ -119,6 +121,25 @@ Output format (*exactly like this*):
 """
 
 USER_PROMPT = "HTML content:\n{html}\n\nIdentify the available languages."
+
+
+# =============================================================================
+# Homepage Detection
+# =============================================================================
+
+HOMEPAGE_PATHS = {"", "/", "/index.html", "/index.php", "/index.htm"}
+
+
+def is_homepage(page_url: str) -> bool:
+    """
+    Check if a URL is a homepage based on its path.
+    Homepages typically have empty or minimal paths.
+    """
+    try:
+        path = urlparse(page_url).path
+        return path in HOMEPAGE_PATHS
+    except Exception:
+        return False
 
 
 # =============================================================================
@@ -273,6 +294,10 @@ class ExtractionStats:
     llm_success: int = 0
     llm_failed: int = 0
 
+    # Homepage stats
+    llm_with_homepage: int = 0
+    llm_without_homepage: int = 0
+
     # Final results
     detected_fr: int = 0
     detected_de: int = 0
@@ -301,6 +326,10 @@ class ExtractionStats:
 
         print("\n  LLM extraction (fallback):", flush=True)
         print(f"    Website-years sent to LLM: {self.llm_needed:,}", flush=True)
+        print(f"    - with homepage available: {self.llm_with_homepage:,}", flush=True)
+        print(
+            f"    - without homepage:        {self.llm_without_homepage:,}", flush=True
+        )
         print(f"    LLM parse success:         {self.llm_success:,}", flush=True)
         print(f"    LLM parse failed:          {self.llm_failed:,}", flush=True)
 
@@ -520,21 +549,38 @@ async def main_async() -> None:
     print(f"  Pages without hreflang:   {stats.regex_no_hreflang:,}", flush=True)
 
     # =========================================================================
-    # PHASE 2: Aggregate to website-year level
+    # PHASE 2: Aggregate to website-year level (with homepage preference)
     # =========================================================================
     print("\n[PHASE 2] Aggregating to website-year level...", flush=True)
 
+    # Add is_homepage flag
+    df = df.with_columns(
+        pl.col("page_url")
+        .map_elements(is_homepage, return_dtype=pl.Boolean)
+        .alias("is_homepage")
+    )
+
+    homepage_count = df.filter(pl.col("is_homepage")).height
+    print(f"  Pages identified as homepages: {homepage_count:,}", flush=True)
+
     # For each (website_url, year), we need:
     # 1. If any page has regex_result → use that (prefer first non-null)
-    # 2. If no page has regex_result → pick one page for LLM
+    # 2. If no page has regex_result → pick homepage HTML for LLM (if available), else first page
+
+    # Sort by is_homepage descending so homepages come first within each group
+    df_sorted = df.sort(
+        ["website_url", "year", "is_homepage"], descending=[False, False, True]
+    )
 
     # Group and aggregate
-    website_year_groups = df.group_by(["website_url", "year"]).agg(
+    website_year_groups = df_sorted.group_by(["website_url", "year"]).agg(
         [
             # Get first non-null regex result
             pl.col("regex_result").drop_nulls().first().alias("regex_result"),
-            # Get first page's HTML for potential LLM fallback
+            # Get first page's HTML for LLM fallback (will be homepage if available due to sorting)
             pl.col("html").first().alias("html_for_llm"),
+            # Track if we have a homepage for this website-year
+            pl.col("is_homepage").any().alias("has_homepage"),
             # Count pages per website-year
             pl.len().alias("n_pages"),
         ]
@@ -551,6 +597,13 @@ async def main_async() -> None:
     print(f"  Need LLM:             {len(df_needs_llm):,}", flush=True)
 
     stats.llm_needed = len(df_needs_llm)
+
+    # Count how many LLM cases have homepage available
+    if len(df_needs_llm) > 0:
+        stats.llm_with_homepage = df_needs_llm.filter(pl.col("has_homepage")).height
+        stats.llm_without_homepage = len(df_needs_llm) - stats.llm_with_homepage
+        print(f"    - with homepage:    {stats.llm_with_homepage:,}", flush=True)
+        print(f"    - without homepage: {stats.llm_without_homepage:,}", flush=True)
 
     # =========================================================================
     # PHASE 3: LLM extraction for remaining website-years
