@@ -1,11 +1,16 @@
 """
-Luxembourg Language Analysis - Step 2: Extract Available Languages via LLM
+Luxembourg Language Analysis - Step 1: Extract Available Languages via LLM
 ===========================================================================
 Joins the sample with raw HTML data, extracts <head> and navigation,
-then uses Magistral to detect which languages each website offers.
+then detects which languages each website offers.
+
+OPTIMIZATIONS:
+1. Regex-first: Extract hreflang tags via regex
+2. Website-year deduplication: Only need one successful extraction per (website_url, year)
+3. LLM fallback: Only use LLM for website-years where regex found nothing
 
 Input:  Sample parquet + raw HTML gz files
-Output: Parquet with detected languages per page
+Output: Parquet with detected languages per website-year
 
 Author: Julio Garbers with contributions from Claude
 Date: January 2026
@@ -66,7 +71,8 @@ HF_MODEL = os.getenv("HF_MODEL", args.model or "mistralai/Magistral-Small-2506")
 PIPELINE_STAGES = int(
     os.getenv("PIPELINE_PARALLEL_SIZE", args.pipeline_parallel_size or "1")
 )
-CONCURRENCY = PIPELINE_STAGES * 32
+# Increased concurrency for better throughput
+CONCURRENCY = PIPELINE_STAGES * 64
 TIMEOUT_S = int(os.getenv("TIMEOUT_S", "300"))
 MAX_RETRIES = 3
 
@@ -116,7 +122,90 @@ USER_PROMPT = "HTML content:\n{html}\n\nIdentify the available languages."
 
 
 # =============================================================================
-# HTML Extraction
+# Regex-based Language Extraction (Fast Path)
+# =============================================================================
+
+# Map hreflang codes to our standard codes
+HREFLANG_MAP = {
+    "fr": "fr",
+    "de": "de",
+    "en": "en",
+    "lb": "lb",
+    "lu": "lb",  # Luxembourg code often used for Luxembourgish
+    "pt": "pt",
+    "nl": "nl",
+    # Common variants
+    "fr-fr": "fr",
+    "fr-lu": "fr",
+    "fr-be": "fr",
+    "de-de": "de",
+    "de-lu": "de",
+    "de-at": "de",
+    "en-us": "en",
+    "en-gb": "en",
+    "en-lu": "en",
+    "pt-pt": "pt",
+    "pt-br": "pt",
+    "nl-nl": "nl",
+    "nl-be": "nl",
+}
+
+# Languages we track
+TRACKED_LANGUAGES = {"fr", "de", "en", "lb", "pt", "nl"}
+
+
+def extract_languages_regex(html: str) -> dict[str, bool] | None:
+    """
+    Extract languages from hreflang tags using regex.
+    Returns dict of detected languages, or None if no hreflang tags found.
+    """
+    if not html:
+        return None
+
+    # Find all hreflang values
+    # Matches: hreflang="fr" or hreflang='fr-FR' etc.
+    hreflang_matches = re.findall(
+        r'hreflang=["\']([a-zA-Z]{2}(?:-[a-zA-Z]{2})?)["\']', html, re.IGNORECASE
+    )
+
+    if not hreflang_matches:
+        return None
+
+    # Initialize result
+    result = {
+        "fr": False,
+        "de": False,
+        "en": False,
+        "lb": False,
+        "pt": False,
+        "nl": False,
+        "other": False,
+    }
+
+    # Map found hreflang codes to our categories
+    for code in hreflang_matches:
+        code_lower = code.lower()
+
+        if code_lower in HREFLANG_MAP:
+            mapped = HREFLANG_MAP[code_lower]
+            result[mapped] = True
+        elif code_lower.split("-")[0] in HREFLANG_MAP:
+            # Try base language code (e.g., "fr" from "fr-CA")
+            mapped = HREFLANG_MAP[code_lower.split("-")[0]]
+            result[mapped] = True
+        elif code_lower not in ("x-default",):
+            # Unknown language, mark as other
+            result["other"] = True
+
+    # Only return if we found at least one real language (not just x-default)
+    if any(result.values()):
+        return result
+
+    return None
+
+
+# =============================================================================
+# HTML Extraction for LLM
 # =============================================================================
 
 
@@ -136,7 +225,6 @@ def extract_head_and_nav(
     head_match = re.search(r"<head[^>]*>(.*?)</head>", html, re.IGNORECASE | re.DOTALL)
     if head_match:
         head_content = head_match.group(0)
-        # Limit head size
         if len(head_content) > head_limit:
             head_content = head_content[:head_limit] + "...</head>"
         result_parts.append(head_content)
@@ -145,12 +233,10 @@ def extract_head_and_nav(
     body_match = re.search(r"<body[^>]*>(.*)", html, re.IGNORECASE | re.DOTALL)
     if body_match:
         body_content = body_match.group(0)
-        # Take first N characters of body
         if len(body_content) > body_limit:
             body_content = body_content[:body_limit] + "..."
         result_parts.append(body_content)
 
-    # If no head/body found, just take the beginning of HTML
     if not result_parts:
         result_parts.append(html[: head_limit + body_limit])
 
@@ -158,30 +244,27 @@ def extract_head_and_nav(
 
 
 # =============================================================================
-# Type Definitions
+# Statistics Tracking
 # =============================================================================
 
 
-class Parsed(dict):
-    """Typed dictionary for parsed extraction results."""
-
-    fr: bool | None
-    de: bool | None
-    en: bool | None
-    lb: bool | None
-    pt: bool | None
-    nl: bool | None
-    other: bool | None
-
-
 @dataclass
-class ValidationStats:
-    """Track statistics for validation and cleaning operations."""
+class ExtractionStats:
+    """Track statistics for the extraction process."""
 
-    json_parse_success: int = 0
-    json_parse_failed: int = 0
+    total_pages: int = 0
+    total_website_years: int = 0
 
-    # Language detection counts
+    # Regex extraction
+    regex_success: int = 0
+    regex_no_hreflang: int = 0
+
+    # LLM extraction
+    llm_needed: int = 0
+    llm_success: int = 0
+    llm_failed: int = 0
+
+    # Final results
     detected_fr: int = 0
     detected_de: int = 0
     detected_en: int = 0
@@ -190,47 +273,59 @@ class ValidationStats:
     detected_nl: int = 0
     detected_other: int = 0
 
-    def print_summary(self, total: int) -> None:
-        """Print validation statistics."""
+    def print_summary(self) -> None:
+        """Print extraction statistics."""
         print(
             "===============================================================================",
             flush=True,
         )
-        print("[VALIDATION STATS] Summary:", flush=True)
-        print("  JSON parsing:", flush=True)
-        print(f"    Successful: {self.json_parse_success:,}", flush=True)
-        print(f"    Failed:     {self.json_parse_failed:,}", flush=True)
+        print("[EXTRACTION STATS] Summary:", flush=True)
+        print("\n  Input:", flush=True)
+        print(f"    Total pages processed:     {self.total_pages:,}", flush=True)
+        print(
+            f"    Unique website-years:      {self.total_website_years:,}", flush=True
+        )
 
-        if total > 0:
-            print("\n  Languages detected (pages offering each language):", flush=True)
+        print("\n  Regex extraction (hreflang):", flush=True)
+        print(f"    Success (hreflang found):  {self.regex_success:,}", flush=True)
+        print(f"    No hreflang tags:          {self.regex_no_hreflang:,}", flush=True)
+
+        print("\n  LLM extraction (fallback):", flush=True)
+        print(f"    Website-years sent to LLM: {self.llm_needed:,}", flush=True)
+        print(f"    LLM parse success:         {self.llm_success:,}", flush=True)
+        print(f"    LLM parse failed:          {self.llm_failed:,}", flush=True)
+
+        if self.total_website_years > 0:
+            print("\n  Languages detected (website-years offering each):", flush=True)
             print(
-                f"    French (fr):        {self.detected_fr:,} ({self.detected_fr / total * 100:.1f}%)",
+                f"    French (fr):        {self.detected_fr:,} ({self.detected_fr / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
             print(
-                f"    German (de):        {self.detected_de:,} ({self.detected_de / total * 100:.1f}%)",
+                f"    German (de):        {self.detected_de:,} ({self.detected_de / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
             print(
-                f"    English (en):       {self.detected_en:,} ({self.detected_en / total * 100:.1f}%)",
+                f"    English (en):       {self.detected_en:,} ({self.detected_en / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
             print(
-                f"    Luxembourgish (lb): {self.detected_lb:,} ({self.detected_lb / total * 100:.1f}%)",
+                f"    Luxembourgish (lb): {self.detected_lb:,} ({self.detected_lb / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
             print(
-                f"    Portuguese (pt):    {self.detected_pt:,} ({self.detected_pt / total * 100:.1f}%)",
+                f"    Portuguese (pt):    {self.detected_pt:,} ({self.detected_pt / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
             print(
-                f"    Dutch (nl):         {self.detected_nl:,} ({self.detected_nl / total * 100:.1f}%)",
+                f"    Dutch (nl):         {self.detected_nl:,} ({self.detected_nl / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
             print(
-                f"    Other:              {self.detected_other:,} ({self.detected_other / total * 100:.1f}%)",
+                f"    Other:              {self.detected_other:,} ({self.detected_other / self.total_website_years * 100:.1f}%)",
                 flush=True,
             )
+
         print(
             "===============================================================================",
             flush=True,
@@ -238,7 +333,7 @@ class ValidationStats:
 
 
 # Global stats tracker
-validation_stats = ValidationStats()
+stats = ExtractionStats()
 
 
 # =============================================================================
@@ -277,12 +372,8 @@ async def retry_post(
         try:
             async with sem:
                 return await post_request(sess, prompt)
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+        except (aiohttp.ClientError, asyncio.TimeoutError):
             if attempt == MAX_RETRIES:
-                print(
-                    f"[ERROR] Request failed after {MAX_RETRIES} retries: {err}",
-                    flush=True,
-                )
                 return None
             await asyncio.sleep((2**attempt) + random.random())
             attempt += 1
@@ -295,7 +386,7 @@ async def run_inference(prompts: list[str]) -> list[str | None]:
     semaphore = asyncio.Semaphore(CONCURRENCY)
     async with aiohttp.ClientSession(timeout=timeout) as session:
         tasks = [retry_post(session, prompt, semaphore) for prompt in prompts]
-        return await tqdm_asyncio.gather(*tasks, desc="inference")
+        return await tqdm_asyncio.gather(*tasks, desc="LLM inference")
 
 
 # =============================================================================
@@ -303,23 +394,13 @@ async def run_inference(prompts: list[str]) -> list[str | None]:
 # =============================================================================
 
 
-def safe_parse_json(text: str | None) -> Parsed:
+def parse_llm_response(text: str | None) -> dict[str, bool] | None:
     """Parse JSON response from LLM."""
-    global validation_stats
-
-    empty: Parsed = {
-        "fr": None,
-        "de": None,
-        "en": None,
-        "lb": None,
-        "pt": None,
-        "nl": None,
-        "other": None,
-    }
+    global stats
 
     if text is None:
-        validation_stats.json_parse_failed += 1
-        return empty
+        stats.llm_failed += 1
+        return None
 
     text = text.strip()
 
@@ -330,34 +411,24 @@ def safe_parse_json(text: str | None) -> Parsed:
         text = text.strip()
 
     try:
-        data: Parsed = json.loads(text)
-        validation_stats.json_parse_success += 1
+        data = json.loads(text)
+        stats.llm_success += 1
     except json.JSONDecodeError:
-        validation_stats.json_parse_failed += 1
-        return empty
+        stats.llm_failed += 1
+        return None
 
-    # Ensure all expected keys exist and count detections
-    for key in ["fr", "de", "en", "lb", "pt", "nl", "other"]:
-        if key not in data:
-            data[key] = None
-        elif data[key] is True:
-            # Count detections
-            if key == "fr":
-                validation_stats.detected_fr += 1
-            elif key == "de":
-                validation_stats.detected_de += 1
-            elif key == "en":
-                validation_stats.detected_en += 1
-            elif key == "lb":
-                validation_stats.detected_lb += 1
-            elif key == "pt":
-                validation_stats.detected_pt += 1
-            elif key == "nl":
-                validation_stats.detected_nl += 1
-            elif key == "other":
-                validation_stats.detected_other += 1
+    # Normalize to our expected format
+    result = {
+        "fr": bool(data.get("fr", False)),
+        "de": bool(data.get("de", False)),
+        "en": bool(data.get("en", False)),
+        "lb": bool(data.get("lb", False)),
+        "pt": bool(data.get("pt", False)),
+        "nl": bool(data.get("nl", False)),
+        "other": bool(data.get("other", False)),
+    }
 
-    return data
+    return result
 
 
 # =============================================================================
@@ -367,6 +438,8 @@ def safe_parse_json(text: str | None) -> Parsed:
 
 async def main_async() -> None:
     """Main extraction pipeline."""
+    global stats
+
     print(
         "===============================================================================",
         flush=True,
@@ -404,7 +477,6 @@ async def main_async() -> None:
         .rename({"url": "page_url"})
     )
 
-    # Join: keep only pages that are in our sample
     df = (
         df_sample.lazy()
         .join(df_raw, on=["page_url", "year"], how="inner")
@@ -412,57 +484,176 @@ async def main_async() -> None:
     )
 
     print(f"  Matched pages with HTML: {len(df):,}", flush=True)
+    stats.total_pages = len(df)
 
     if len(df) == 0:
         print("  No matches found, exiting.", flush=True)
         return
 
-    # Extract head + navigation from HTML
-    print("[EXTRACT] Extracting <head> and navigation from HTML...", flush=True)
+    # =========================================================================
+    # PHASE 1: Regex extraction (fast path)
+    # =========================================================================
+    print("\n[PHASE 1] Regex extraction of hreflang tags...", flush=True)
 
+    # Extract languages via regex for all pages
     df = df.with_columns(
         pl.col("html")
-        .map_elements(extract_head_and_nav, return_dtype=pl.String)
-        .alias("html_extract")
+        .map_elements(extract_languages_regex, return_dtype=pl.Object)
+        .alias("regex_result")
     )
 
-    # Drop full HTML to save memory
-    df = df.drop("html")
+    # Count successes
+    regex_success_count = df.filter(pl.col("regex_result").is_not_null()).height
+    stats.regex_success = regex_success_count
+    stats.regex_no_hreflang = len(df) - regex_success_count
 
-    # Filter out pages with empty extracts
-    before_filter = len(df)
-    df = df.filter(pl.col("html_extract").str.len_chars() > 100)
-    print(
-        f"  Pages with valid HTML extract: {len(df):,} (dropped {before_filter - len(df):,})",
-        flush=True,
+    print(f"  Pages with hreflang tags: {regex_success_count:,}", flush=True)
+    print(f"  Pages without hreflang:   {stats.regex_no_hreflang:,}", flush=True)
+
+    # =========================================================================
+    # PHASE 2: Aggregate to website-year level
+    # =========================================================================
+    print("\n[PHASE 2] Aggregating to website-year level...", flush=True)
+
+    # For each (website_url, year), we need:
+    # 1. If any page has regex_result → use that (prefer first non-null)
+    # 2. If no page has regex_result → pick one page for LLM
+
+    # Group and aggregate
+    website_year_groups = df.group_by(["website_url", "year"]).agg(
+        [
+            # Get first non-null regex result
+            pl.col("regex_result").drop_nulls().first().alias("regex_result"),
+            # Get first page's HTML for potential LLM fallback
+            pl.col("html").first().alias("html_for_llm"),
+            # Count pages per website-year
+            pl.len().alias("n_pages"),
+        ]
     )
 
-    if len(df) == 0:
-        print("  No valid HTML extracts, exiting.", flush=True)
-        return
+    stats.total_website_years = len(website_year_groups)
+    print(f"  Unique website-years: {stats.total_website_years:,}", flush=True)
 
-    # Build prompts
-    print("[PROMPT] Building prompts...", flush=True)
-    prompts = [
-        USER_PROMPT.format(html=row["html_extract"]) for row in df.iter_rows(named=True)
-    ]
+    # Split into regex-solved and needs-LLM
+    df_regex_solved = website_year_groups.filter(pl.col("regex_result").is_not_null())
+    df_needs_llm = website_year_groups.filter(pl.col("regex_result").is_null())
 
-    # Run inference
-    print("[INFERENCE] Starting batch inference...", flush=True)
-    raw_results = await run_inference(prompts)
+    print(f"  Solved by regex:      {len(df_regex_solved):,}", flush=True)
+    print(f"  Need LLM:             {len(df_needs_llm):,}", flush=True)
 
-    # Track failed requests
-    failed_count = sum(1 for r in raw_results if r is None)
-    if failed_count > 0:
-        print(f"  [WARNING] {failed_count} requests failed", flush=True)
+    stats.llm_needed = len(df_needs_llm)
 
-    # Parse responses
-    print("[PARSE] Parsing JSON responses...", flush=True)
-    parsed_rows = [safe_parse_json(r) for r in raw_results]
+    # =========================================================================
+    # PHASE 3: LLM extraction for remaining website-years
+    # =========================================================================
+    llm_results = {}
 
-    parsed_df = pl.DataFrame(
-        parsed_rows,
+    if len(df_needs_llm) > 0:
+        print(
+            f"\n[PHASE 3] LLM extraction for {len(df_needs_llm):,} website-years...",
+            flush=True,
+        )
+
+        # Extract head+nav for LLM pages
+        df_needs_llm = df_needs_llm.with_columns(
+            pl.col("html_for_llm")
+            .map_elements(extract_head_and_nav, return_dtype=pl.String)
+            .alias("html_extract")
+        )
+
+        # Filter out pages with empty extracts
+        df_needs_llm = df_needs_llm.filter(pl.col("html_extract").str.len_chars() > 100)
+        print(f"  Pages with valid HTML extract: {len(df_needs_llm):,}", flush=True)
+
+        if len(df_needs_llm) > 0:
+            # Build prompts
+            prompts = [
+                USER_PROMPT.format(html=row["html_extract"])
+                for row in df_needs_llm.iter_rows(named=True)
+            ]
+
+            # Run inference
+            raw_responses = await run_inference(prompts)
+
+            # Parse responses and store with keys
+            for i, row in enumerate(df_needs_llm.iter_rows(named=True)):
+                key = (row["website_url"], row["year"])
+                parsed = parse_llm_response(raw_responses[i])
+                llm_results[key] = {
+                    "result": parsed,
+                    "raw_response": raw_responses[i],
+                }
+
+    # =========================================================================
+    # PHASE 4: Combine results
+    # =========================================================================
+    print("\n[PHASE 4] Combining results...", flush=True)
+
+    # Build final results list
+    final_rows = []
+
+    for row in website_year_groups.iter_rows(named=True):
+        website_url = row["website_url"]
+        year = row["year"]
+        key = (website_url, year)
+
+        # Determine source of language info
+        if row["regex_result"] is not None:
+            langs = row["regex_result"]
+            raw_response = "REGEX_HREFLANG"
+        elif key in llm_results and llm_results[key]["result"] is not None:
+            langs = llm_results[key]["result"]
+            raw_response = llm_results[key]["raw_response"]
+        else:
+            # No data available
+            langs = {
+                "fr": None,
+                "de": None,
+                "en": None,
+                "lb": None,
+                "pt": None,
+                "nl": None,
+                "other": None,
+            }
+            raw_response = None
+
+        final_rows.append(
+            {
+                "website_url": website_url,
+                "year": year,
+                "fr": langs.get("fr"),
+                "de": langs.get("de"),
+                "en": langs.get("en"),
+                "lb": langs.get("lb"),
+                "pt": langs.get("pt"),
+                "nl": langs.get("nl"),
+                "other": langs.get("other"),
+                "raw_response": raw_response,
+            }
+        )
+
+        # Update stats
+        if langs.get("fr"):
+            stats.detected_fr += 1
+        if langs.get("de"):
+            stats.detected_de += 1
+        if langs.get("en"):
+            stats.detected_en += 1
+        if langs.get("lb"):
+            stats.detected_lb += 1
+        if langs.get("pt"):
+            stats.detected_pt += 1
+        if langs.get("nl"):
+            stats.detected_nl += 1
+        if langs.get("other"):
+            stats.detected_other += 1
+
+    # Create final DataFrame
+    result_df = pl.DataFrame(
+        final_rows,
         schema={
+            "website_url": pl.String,
+            "year": pl.Int64,
             "fr": pl.Boolean,
             "de": pl.Boolean,
             "en": pl.Boolean,
@@ -470,39 +661,18 @@ async def main_async() -> None:
             "pt": pl.Boolean,
             "nl": pl.Boolean,
             "other": pl.Boolean,
+            "raw_response": pl.String,
         },
     )
 
-    # Print validation stats
-    validation_stats.print_summary(len(df))
-
-    # Merge results
-    print("[MERGE] Merging results...", flush=True)
-    df = df.drop("html_extract")  # Don't need this in output
-    df = df.with_columns(parsed_df)
-    df = df.with_columns(pl.Series("raw_response", raw_results))
-
-    # Select final columns
-    result_df = df.select(
-        [
-            "website_url",
-            "page_url",
-            "year",
-            "fr",
-            "de",
-            "en",
-            "lb",
-            "pt",
-            "nl",
-            "other",
-            "raw_response",
-        ]
-    )
+    # Print stats
+    stats.print_summary()
 
     # Save results
     print("[SAVE] Writing results...", flush=True)
     result_df.write_parquet(OUTPUT_FILE, compression="zstd", compression_level=10)
     print(f"  Saved to: {OUTPUT_FILE}", flush=True)
+    print(f"  Total rows: {len(result_df):,}", flush=True)
 
     print(
         "===============================================================================",
