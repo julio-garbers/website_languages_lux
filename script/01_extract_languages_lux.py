@@ -154,10 +154,11 @@ HREFLANG_MAP = {
 TRACKED_LANGUAGES = {"fr", "de", "en", "lb", "pt", "nl"}
 
 
-def extract_languages_regex(html: str) -> dict[str, bool] | None:
+def extract_languages_regex(html: str) -> str | None:
     """
     Extract languages from hreflang tags using regex.
-    Returns dict of detected languages, or None if no hreflang tags found.
+    Returns a comma-separated string of found language codes, or None if no hreflang tags found.
+    E.g., "fr,de,en" or None
     """
     if not html:
         return None
@@ -171,7 +172,31 @@ def extract_languages_regex(html: str) -> dict[str, bool] | None:
     if not hreflang_matches:
         return None
 
-    # Initialize result
+    # Track found languages
+    found_langs = set()
+
+    # Map found hreflang codes to our categories
+    for code in hreflang_matches:
+        code_lower = code.lower()
+
+        if code_lower in HREFLANG_MAP:
+            found_langs.add(HREFLANG_MAP[code_lower])
+        elif code_lower.split("-")[0] in HREFLANG_MAP:
+            # Try base language code (e.g., "fr" from "fr-CA")
+            found_langs.add(HREFLANG_MAP[code_lower.split("-")[0]])
+        elif code_lower not in ("x-default",):
+            # Unknown language, mark as other
+            found_langs.add("other")
+
+    # Only return if we found at least one real language
+    if found_langs:
+        return ",".join(sorted(found_langs))
+
+    return None
+
+
+def parse_regex_result(regex_str: str | None) -> dict[str, bool]:
+    """Convert regex result string back to dict of booleans."""
     result = {
         "fr": False,
         "de": False,
@@ -181,27 +206,11 @@ def extract_languages_regex(html: str) -> dict[str, bool] | None:
         "nl": False,
         "other": False,
     }
-
-    # Map found hreflang codes to our categories
-    for code in hreflang_matches:
-        code_lower = code.lower()
-
-        if code_lower in HREFLANG_MAP:
-            mapped = HREFLANG_MAP[code_lower]
-            result[mapped] = True
-        elif code_lower.split("-")[0] in HREFLANG_MAP:
-            # Try base language code (e.g., "fr" from "fr-CA")
-            mapped = HREFLANG_MAP[code_lower.split("-")[0]]
-            result[mapped] = True
-        elif code_lower not in ("x-default",):
-            # Unknown language, mark as other
-            result["other"] = True
-
-    # Only return if we found at least one real language (not just x-default)
-    if any(result.values()):
-        return result
-
-    return None
+    if regex_str:
+        for lang in regex_str.split(","):
+            if lang in result:
+                result[lang] = True
+    return result
 
 
 # =============================================================================
@@ -495,10 +504,10 @@ async def main_async() -> None:
     # =========================================================================
     print("\n[PHASE 1] Regex extraction of hreflang tags...", flush=True)
 
-    # Extract languages via regex for all pages
+    # Extract languages via regex for all pages (returns comma-separated string or None)
     df = df.with_columns(
         pl.col("html")
-        .map_elements(extract_languages_regex, return_dtype=pl.Object)
+        .map_elements(extract_languages_regex, return_dtype=pl.String)
         .alias("regex_result")
     )
 
@@ -599,7 +608,8 @@ async def main_async() -> None:
 
         # Determine source of language info
         if row["regex_result"] is not None:
-            langs = row["regex_result"]
+            # Parse the comma-separated string back to dict
+            langs = parse_regex_result(row["regex_result"])
             raw_response = "REGEX_HREFLANG"
         elif key in llm_results and llm_results[key]["result"] is not None:
             langs = llm_results[key]["result"]
