@@ -6,7 +6,7 @@ Outputs a parquet file with unique (website_url, page_url, year) combinations
 that will be joined with raw HTML data in the next step.
 
 Author: Julio Garbers with contributions from Claude
-Date: June 2024
+Date: January 2026
 """
 
 from pathlib import Path
