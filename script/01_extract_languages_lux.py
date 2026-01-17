@@ -240,7 +240,7 @@ def parse_regex_result(regex_str: str | None) -> dict[str, bool]:
 
 
 def extract_head_and_nav(
-    html: str, head_limit: int = 15000, body_limit: int = 8000
+    html: str, head_limit: int = 10000, body_limit: int = 5000
 ) -> str:
     """
     Extract the <head> section and first part of <body> from HTML.
