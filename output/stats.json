@@ -1,0 +1,417 @@
+{
+  "yearly": [
+    {
+      "year": 2013,
+      "n_sites": 2120,
+      "fr_count": 1672,
+      "fr_pct": 78.87,
+      "de_count": 831,
+      "de_pct": 39.2,
+      "en_count": 849,
+      "en_pct": 40.05,
+      "lb_count": 224,
+      "lb_pct": 10.57,
+      "pt_count": 52,
+      "pt_pct": 2.45,
+      "nl_count": 97,
+      "nl_pct": 4.58,
+      "other_count": 63,
+      "other_pct": 2.97
+    },
+    {
+      "year": 2014,
+      "n_sites": 1920,
+      "fr_count": 1491,
+      "fr_pct": 77.66,
+      "de_count": 758,
+      "de_pct": 39.48,
+      "en_count": 799,
+      "en_pct": 41.61,
+      "lb_count": 204,
+      "lb_pct": 10.62,
+      "pt_count": 52,
+      "pt_pct": 2.71,
+      "nl_count": 83,
+      "nl_pct": 4.32,
+      "other_count": 53,
+      "other_pct": 2.76
+    },
+    {
+      "year": 2015,
+      "n_sites": 1841,
+      "fr_count": 1420,
+      "fr_pct": 77.13,
+      "de_count": 700,
+      "de_pct": 38.02,
+      "en_count": 769,
+      "en_pct": 41.77,
+      "lb_count": 179,
+      "lb_pct": 9.72,
+      "pt_count": 44,
+      "pt_pct": 2.39,
+      "nl_count": 77,
+      "nl_pct": 4.18,
+      "other_count": 46,
+      "other_pct": 2.5
+    },
+    {
+      "year": 2016,
+      "n_sites": 5806,
+      "fr_count": 4535,
+      "fr_pct": 78.11,
+      "de_count": 2200,
+      "de_pct": 37.89,
+      "en_count": 2097,
+      "en_pct": 36.12,
+      "lb_count": 688,
+      "lb_pct": 11.85,
+      "pt_count": 159,
+      "pt_pct": 2.74,
+      "nl_count": 192,
+      "nl_pct": 3.31,
+      "other_count": 153,
+      "other_pct": 2.64
+    },
+    {
+      "year": 2017,
+      "n_sites": 7381,
+      "fr_count": 5730,
+      "fr_pct": 77.63,
+      "de_count": 2812,
+      "de_pct": 38.1,
+      "en_count": 2751,
+      "en_pct": 37.27,
+      "lb_count": 989,
+      "lb_pct": 13.4,
+      "pt_count": 209,
+      "pt_pct": 2.83,
+      "nl_count": 222,
+      "nl_pct": 3.01,
+      "other_count": 208,
+      "other_pct": 2.82
+    },
+    {
+      "year": 2018,
+      "n_sites": 8401,
+      "fr_count": 6483,
+      "fr_pct": 77.17,
+      "de_count": 3126,
+      "de_pct": 37.21,
+      "en_count": 3274,
+      "en_pct": 38.97,
+      "lb_count": 1250,
+      "lb_pct": 14.88,
+      "pt_count": 212,
+      "pt_pct": 2.52,
+      "nl_count": 230,
+      "nl_pct": 2.74,
+      "other_count": 213,
+      "other_pct": 2.54
+    },
+    {
+      "year": 2019,
+      "n_sites": 9662,
+      "fr_count": 7486,
+      "fr_pct": 77.48,
+      "de_count": 2940,
+      "de_pct": 30.43,
+      "en_count": 3203,
+      "en_pct": 33.15,
+      "lb_count": 847,
+      "lb_pct": 8.77,
+      "pt_count": 237,
+      "pt_pct": 2.45,
+      "nl_count": 267,
+      "nl_pct": 2.76,
+      "other_count": 250,
+      "other_pct": 2.59
+    },
+    {
+      "year": 2020,
+      "n_sites": 10144,
+      "fr_count": 7887,
+      "fr_pct": 77.75,
+      "de_count": 3060,
+      "de_pct": 30.17,
+      "en_count": 3360,
+      "en_pct": 33.12,
+      "lb_count": 833,
+      "lb_pct": 8.21,
+      "pt_count": 225,
+      "pt_pct": 2.22,
+      "nl_count": 272,
+      "nl_pct": 2.68,
+      "other_count": 244,
+      "other_pct": 2.41
+    },
+    {
+      "year": 2021,
+      "n_sites": 10022,
+      "fr_count": 7799,
+      "fr_pct": 77.82,
+      "de_count": 2997,
+      "de_pct": 29.9,
+      "en_count": 3425,
+      "en_pct": 34.17,
+      "lb_count": 825,
+      "lb_pct": 8.23,
+      "pt_count": 223,
+      "pt_pct": 2.23,
+      "nl_count": 271,
+      "nl_pct": 2.7,
+      "other_count": 261,
+      "other_pct": 2.6
+    },
+    {
+      "year": 2022,
+      "n_sites": 9655,
+      "fr_count": 7366,
+      "fr_pct": 76.29,
+      "de_count": 2923,
+      "de_pct": 30.27,
+      "en_count": 3457,
+      "en_pct": 35.81,
+      "lb_count": 849,
+      "lb_pct": 8.79,
+      "pt_count": 207,
+      "pt_pct": 2.14,
+      "nl_count": 302,
+      "nl_pct": 3.13,
+      "other_count": 264,
+      "other_pct": 2.73
+    },
+    {
+      "year": 2023,
+      "n_sites": 8715,
+      "fr_count": 6474,
+      "fr_pct": 74.29,
+      "de_count": 2827,
+      "de_pct": 32.44,
+      "en_count": 3403,
+      "en_pct": 39.05,
+      "lb_count": 812,
+      "lb_pct": 9.32,
+      "pt_count": 234,
+      "pt_pct": 2.69,
+      "nl_count": 324,
+      "nl_pct": 3.72,
+      "other_count": 273,
+      "other_pct": 3.13
+    },
+    {
+      "year": 2024,
+      "n_sites": 8061,
+      "fr_count": 6059,
+      "fr_pct": 75.16,
+      "de_count": 2669,
+      "de_pct": 33.11,
+      "en_count": 3178,
+      "en_pct": 39.42,
+      "lb_count": 735,
+      "lb_pct": 9.12,
+      "pt_count": 197,
+      "pt_pct": 2.44,
+      "nl_count": 356,
+      "nl_pct": 4.42,
+      "other_count": 307,
+      "other_pct": 3.81
+    }
+  ],
+  "multilingual": [
+    {
+      "year": 2013,
+      "monolingual": 52.92,
+      "bilingual": 23.68,
+      "trilingual": 14.67,
+      "quadlingual_plus": 7.59,
+      "unknown": 1.13
+    },
+    {
+      "year": 2014,
+      "monolingual": 52.97,
+      "bilingual": 23.59,
+      "trilingual": 13.91,
+      "quadlingual_plus": 8.39,
+      "unknown": 1.15
+    },
+    {
+      "year": 2015,
+      "monolingual": 52.69,
+      "bilingual": 24.55,
+      "trilingual": 13.25,
+      "quadlingual_plus": 7.71,
+      "unknown": 1.79
+    },
+    {
+      "year": 2016,
+      "monolingual": 56.03,
+      "bilingual": 22.8,
+      "trilingual": 11.66,
+      "quadlingual_plus": 8.13,
+      "unknown": 1.38
+    },
+    {
+      "year": 2017,
+      "monolingual": 55.07,
+      "bilingual": 23.06,
+      "trilingual": 11.23,
+      "quadlingual_plus": 9.15,
+      "unknown": 1.49
+    },
+    {
+      "year": 2018,
+      "monolingual": 55.78,
+      "bilingual": 22.1,
+      "trilingual": 10.21,
+      "quadlingual_plus": 10.56,
+      "unknown": 1.35
+    },
+    {
+      "year": 2019,
+      "monolingual": 62.53,
+      "bilingual": 21.19,
+      "trilingual": 10.2,
+      "quadlingual_plus": 4.7,
+      "unknown": 1.38
+    },
+    {
+      "year": 2020,
+      "monolingual": 62.96,
+      "bilingual": 20.91,
+      "trilingual": 10.31,
+      "quadlingual_plus": 4.45,
+      "unknown": 1.37
+    },
+    {
+      "year": 2021,
+      "monolingual": 63.13,
+      "bilingual": 20.5,
+      "trilingual": 10.77,
+      "quadlingual_plus": 4.49,
+      "unknown": 1.11
+    },
+    {
+      "year": 2022,
+      "monolingual": 61.77,
+      "bilingual": 20.96,
+      "trilingual": 11.29,
+      "quadlingual_plus": 4.58,
+      "unknown": 1.4
+    },
+    {
+      "year": 2023,
+      "monolingual": 59.12,
+      "bilingual": 22.43,
+      "trilingual": 11.55,
+      "quadlingual_plus": 5.45,
+      "unknown": 1.45
+    },
+    {
+      "year": 2024,
+      "monolingual": 58.17,
+      "bilingual": 23.01,
+      "trilingual": 11.44,
+      "quadlingual_plus": 6.08,
+      "unknown": 1.3
+    }
+  ],
+  "combinations": [
+    {
+      "combo": "French",
+      "count": 3071,
+      "pct": 38.1
+    },
+    {
+      "combo": "English",
+      "count": 1036,
+      "pct": 12.9
+    },
+    {
+      "combo": "English + French + German",
+      "count": 873,
+      "pct": 10.8
+    },
+    {
+      "combo": "English + French",
+      "count": 872,
+      "pct": 10.8
+    },
+    {
+      "combo": "French + German",
+      "count": 696,
+      "pct": 8.6
+    },
+    {
+      "combo": "German",
+      "count": 542,
+      "pct": 6.7
+    },
+    {
+      "combo": "English + French + German + Luxembourgish",
+      "count": 194,
+      "pct": 2.4
+    },
+    {
+      "combo": "French + German + Luxembourgish",
+      "count": 183,
+      "pct": 2.3
+    },
+    {
+      "combo": "Unknown",
+      "count": 126,
+      "pct": 1.6
+    },
+    {
+      "combo": "English + German",
+      "count": 110,
+      "pct": 1.4
+    },
+    {
+      "combo": "French + Luxembourgish",
+      "count": 107,
+      "pct": 1.3
+    },
+    {
+      "combo": "Luxembourgish",
+      "count": 97,
+      "pct": 1.2
+    }
+  ],
+  "combinations_year": 2024,
+  "summary": {
+    "first_year": 2013,
+    "last_year": 2024,
+    "total_website_years": 83728,
+    "total_websites_first": 2120,
+    "total_websites_latest": 8061,
+    "years_covered": 12,
+    "fr_first": 78.9,
+    "fr_last": 75.2,
+    "fr_change": -3.7,
+    "de_first": 39.2,
+    "de_last": 33.1,
+    "de_change": -6.1,
+    "en_first": 40.0,
+    "en_last": 39.4,
+    "en_change": -0.6,
+    "lb_first": 10.6,
+    "lb_last": 9.1,
+    "lb_change": -1.4,
+    "pt_first": 2.5,
+    "pt_last": 2.4,
+    "pt_change": -0.0,
+    "nl_first": 4.6,
+    "nl_last": 4.4,
+    "nl_change": -0.2,
+    "multilingual_first": 45.9,
+    "multilingual_last": 40.5,
+    "multilingual_change": -5.4
+  },
+  "methodology": {
+    "total_website_years": 83728,
+    "regex_extracted": 15808,
+    "llm_extracted": 67774,
+    "needs_fallback": 5937,
+    "fasttext_applied": 4995
+  }
+}
