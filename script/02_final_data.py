@@ -253,7 +253,7 @@ def compute_statistics(df: pl.DataFrame) -> dict:
         "years_covered": last_year - first_year + 1,
     }
 
-    for lang in LANGUAGES:
+    for lang in LANGUAGES + ["other"]:
         first_pct = (
             first_df.filter(pl.col(lang)).height / len(first_df) * 100
             if len(first_df) > 0
