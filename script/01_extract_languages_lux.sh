@@ -168,8 +168,8 @@ apptainer exec ${APPTAINER_ARGS} ${SIF_IMAGE} vllm serve ${HF_MODEL} \
         --gpu-memory-utilization 0.95 \
         --disable-log-requests \
         --max-model-len 16384 \
-        --max-num-batched-tokens 65536 \
-        --max-num-seqs 256 \
+        --max-num-batched-tokens 32768 \
+        --max-num-seqs 128 \
         --tokenizer-mode mistral \
         --config-format mistral \
         --load-format mistral \
